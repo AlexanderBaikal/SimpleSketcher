@@ -1,5 +1,9 @@
 import sys
+import traceback
+import matplotlib.pyplot as plt
 
+import cv2
+import numpy as np
 from PyQt5 import QtGui, QtWidgets
 from PyQt5.QtCore import Qt, QPoint
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QToolBar, QGridLayout, QToolButton, QMenuBar, \
@@ -9,7 +13,6 @@ from os import listdir
 
 
 class MyMainWindow(QMainWindow):
-
     def __init__(self, parent=None):
         super(MyMainWindow, self).__init__(parent)
         self.initUI()
@@ -18,6 +21,7 @@ class MyMainWindow(QMainWindow):
         self.setWindowIcon(QtGui.QIcon('sk_icon.png'))
         self.painter = Painter()
         self.setCentralWidget(self.painter)
+
         layout = QGridLayout()
         tb = self.addToolBar("File")
         add = QAction(QIcon("addkp_icon.png"), "addkp", self)
@@ -29,11 +33,23 @@ class MyMainWindow(QMainWindow):
         clear = QAction(QIcon("clear_icon.png"), "clear", self)
         clear.triggered.connect(self.painter.clear)
         tb.addAction(clear)
-        save = QAction(QIcon("save_icon.png"), "save", self)
-        save.triggered.connect(self.painter.save)
-        tb.addAction(save)
+        mgnt = QAction(QIcon("magnet_icon.png"), "magnet", self)
+        mgnt.triggered.connect(self.painter.magnet)
+        tb.addAction(mgnt)
+        self.savebutton = QAction(QIcon("save_icon.png"), "save", self)
+        self.savebutton.triggered.connect(self.painter.save)
+        # self.savebutton.setDisabled(True)
+        tb.addAction(self.savebutton)
         self.setLayout(layout)
         self.setWindowTitle("Sketcher demo")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.set_enabled()
+
+    def set_enabled(self):
+        if self.painter.save_en:
+            self.savebutton.setDisabled(False)
 
 
 class Painter(QWidget):
@@ -63,6 +79,8 @@ class Painter(QWidget):
         self.states = []
         self.redolist = []
 
+        self.save_en = False
+
         shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
         shortcut.activated.connect(self.undo)
 
@@ -90,11 +108,12 @@ class Painter(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            self.save_en = True
             self.states.append(self.pixmap.copy())
             if len(self.states) > 3:
                 del self.states[0]
-            self.redoactionstype.clear() # Как только внесли изменение в отмененное состояние,
-            self.redolist.clear() # Теряем возможность повторить действия
+            self.redoactionstype.clear()  # Как только внесли изменение в отмененное состояние,
+            self.redolist.clear()  # Теряем возможность повторить действия
             self.drawing = True
             self.lastPoint = event.pos()
             if self.kpmode:
@@ -129,22 +148,32 @@ class Painter(QWidget):
             self.sketch = self.pixmap.copy()
         self.kpmode = True
 
-    def stopKP(self):
+    def stopKP(self):  # Переключение на рисование
         self.color = Qt.black
+        self.states.append(self.pixmap.copy())
+        if self.sketch:
+            self.pixmap = self.sketch
+        self.undokplist = self.kplist.copy()
+        self.redokplist.clear()
+        self.kplist.clear()
+        print(self.kplist)
+        self.savekptext = self.kptext
+        self.kptext = 1
+        self.actionstype.append('stopkp')
         self.kpmode = False
+        self.update()
 
     def save(self):
+        if not self.save_en:
+            return
         filename = f'img_{self.nimg}.jpg'
-        if self.sketch:
-            self.sketch.save(filename, 'jpg')
-        else:
-            self.pixmap.save(filename, 'jpg')
+        self.save_img(filename)
         with open(filename.replace('jpg', 'txt'), 'w') as f:
             f.write(str(self.kplist))
         self.nimg += 1
 
     def clear(self):  # Нужно сохранять ключевые точки при очистке !!!
-        if self.actionstype[-1] == 'clear':
+        if self.actionstype and self.actionstype[-1] == 'clear':
             return
         self.states.append(self.pixmap.copy())
         if len(self.states) > 3:
@@ -152,16 +181,16 @@ class Painter(QWidget):
         self.pixmap.fill(QColor("white"))
         self.savekptext = self.kptext  # Сохраняем нумерацию для отмены
         self.kptext = 1
-        self.undokplist = self.kplist.copy() # Сохраняем точки для отмены
+        self.undokplist = self.kplist.copy()  # Сохраняем точки для отмены
         self.kplist.clear()
         self.redokplist.clear()
-        # self.redoactionstype = self.actionstype.copy()
+        self.sketch = None
         self.actionstype.append('clear')
         print(self.kplist, ' ||| ', self.redokplist, ' ||| ', self.undokplist, self.redolist)
         self.update()
 
     def redo(self):
-        if self.actionstype[-1] == 'clear':
+        if self.actionstype and self.actionstype[-1] == 'clear':
             # Если мы вернулись к очищенному холсту,
             # дальше нет смысла нажимать на повтор
             self.redolist.clear()
@@ -177,10 +206,11 @@ class Painter(QWidget):
                 if actype == 'kp':
                     self.kplist.append(self.redokplist.pop())
                     self.kptext += 1
-                if actype == 'clear':  # Если последнее действие было "Clear"
+                if actype == 'clear' or actype == 'stopkp':  # Если последнее действие было "Clear"
                     self.undokplist = self.redokplist.copy()
                     self.kplist = []
                     self.redokplist = []
+                    self.kptext = 1
 
                 self.actionstype.append(actype)  # Тип последнего действия
             if len(self.states) > 3:
@@ -200,7 +230,7 @@ class Painter(QWidget):
                     if self.kplist:
                         self.redokplist.append(self.kplist.pop())  # Убираем точку из списка точек
                         self.kptext -= 1
-                if actype == 'clear':  # Если последнее действие было "Clear"
+                if actype == 'clear' or actype == 'stopkp':  # Если последнее действие было "Clear"
                     if self.undokplist:
                         self.kptext = self.savekptext
                         self.redokplist = self.undokplist.copy()
@@ -210,7 +240,33 @@ class Painter(QWidget):
             if len(self.redolist) > 3:
                 del self.redolist[0]
             print(self.kplist, ' ||| ', self.redokplist, ' ||| ', self.undokplist)
+            # print(self.pixmap)
             self.update()
+
+    def save_img(self, filename):
+        if self.sketch:
+            self.sketch.save(filename, 'jpg')
+        else:
+            self.pixmap.save(filename, 'jpg')
+
+    def magnet(self):  # Shift kp to borderlines
+        if not self.kplist:
+            return
+        filename = 'magnet.png'
+        self.save_img(filename)
+        img = cv2.imread(filename)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img = cv2.bitwise_not(img)
+        ret, img = cv2.threshold(img, 200, 255, 0)
+        print(img.shape)
+        nonzero = cv2.findNonZero(img)
+        for kp in self.kplist:
+            distances = np.sqrt((nonzero[:, :, 0] - kp[0]) ** 2 + (nonzero[:, :, 1] - kp[1]) ** 2)
+            nearest_index = np.argmin(distances)
+            print(nonzero[nearest_index])
+            plt.scatter(*nonzero[nearest_index,0])
+        plt.imshow(img, cmap='Greys')
+        plt.show()
 
 
 def except_hook(cls, exception, traceback):
@@ -224,9 +280,11 @@ if __name__ == '__main__':
     example.show()
     sys.exit(app.exec_())
 
-# Подписи к точкам при очистке холста
-# Зависание при включении KP
+#   Подписи к точкам при очистке холста
+#   Зависание при включении KP
 # Должна выбираться точка, где контур
 # Если отменили и изменили, то не можем повторить
 # Проверка точек из файла на холсте
 # Повороты, аугментация
+# Сохранение скетча после отмены, очистки, повторного добавления точек
+# Disable кнопки
