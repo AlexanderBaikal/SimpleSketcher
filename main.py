@@ -15,25 +15,25 @@ class MyMainWindow(QMainWindow):
         self.initUI()
 
     def initUI(self):
-        self.setWindowIcon(QtGui.QIcon('sk_icon.png'))
+        self.setWindowIcon(QtGui.QIcon('res/sk_icon.png'))
         self.painter = Painter()
         self.setCentralWidget(self.painter)
         # Toolbar
         layout = QGridLayout()
         tb = self.addToolBar("File")
-        add = QAction(QIcon("res/addkp_icon.png"), "addkp", self)
+        add = QAction(QIcon("res/addkp_icon.png"), "Add keypoints", self)
         add.triggered.connect(self.painter.addKP)
         tb.addAction(add)
-        stop = QAction(QIcon("res/stopkp_icon.png"), "stop", self)
+        stop = QAction(QIcon("res/stopkp_icon.png"), "Add sketch", self)
         stop.triggered.connect(self.painter.stopKP)
         tb.addAction(stop)
-        clear = QAction(QIcon("res/clear_icon.png"), "clear", self)
+        clear = QAction(QIcon("res/clear_icon.png"), "Clear all", self)
         clear.triggered.connect(self.painter.clear)
         tb.addAction(clear)
-        mgnt = QAction(QIcon("res/magnet_icon.png"), "magnet", self)
+        mgnt = QAction(QIcon("res/magnet_icon.png"), "Magnet", self)
         mgnt.triggered.connect(self.painter.magnet)
         tb.addAction(mgnt)
-        self.savebutton = QAction(QIcon("res/save_icon.png"), "save", self)
+        self.savebutton = QAction(QIcon("res/save_icon.png"), "Save", self)
         self.savebutton.triggered.connect(self.painter.save)
         tb.addAction(self.savebutton)
         self.setLayout(layout)
@@ -101,18 +101,19 @@ class Painter(QWidget):
             self.redo_states.clear()  # Теряем возможность повторить действия
             self.drawing = True
             self.last_point = event.pos()
+            painter = QPainter(self.pixmap)
+            painter.setPen(QPen(self.color, 3, Qt.SolidLine))
             if self.kp_mode:
-                painter = QPainter(self.pixmap)
-                painter.setPen(QPen(self.color, 3, Qt.SolidLine))
                 painter.drawEllipse(event.pos(), 6, 6)
                 painter.setFont(QFont('Arial', 10))
                 painter.drawText(event.x() + 5, event.y() + 20, str(self.kp_text))
                 self.kp_text += 1
                 self.kp_list.append((event.x(), event.y()))
                 self.undo_actions_type.append('kp')
-                self.update()
             else:
+                painter.drawPoint(event.pos())
                 self.undo_actions_type.append('draw')
+            self.update()
 
     def mouseMoveEvent(self, event):
         if event.buttons() and Qt.LeftButton and self.drawing and not self.kp_mode:
