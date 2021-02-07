@@ -24,19 +24,19 @@ class MyMainWindow(QMainWindow):
 
         layout = QGridLayout()
         tb = self.addToolBar("File")
-        add = QAction(QIcon("addkp_icon.png"), "addkp", self)
+        add = QAction(QIcon("res/addkp_icon.png"), "addkp", self)
         add.triggered.connect(self.painter.addKP)
         tb.addAction(add)
-        stop = QAction(QIcon("stopkp_icon.png"), "stop", self)
+        stop = QAction(QIcon("res/stopkp_icon.png"), "stop", self)
         stop.triggered.connect(self.painter.stopKP)
         tb.addAction(stop)
-        clear = QAction(QIcon("clear_icon.png"), "clear", self)
+        clear = QAction(QIcon("res/clear_icon.png"), "clear", self)
         clear.triggered.connect(self.painter.clear)
         tb.addAction(clear)
-        mgnt = QAction(QIcon("magnet_icon.png"), "magnet", self)
+        mgnt = QAction(QIcon("res/magnet_icon.png"), "magnet", self)
         mgnt.triggered.connect(self.painter.magnet)
         tb.addAction(mgnt)
-        self.savebutton = QAction(QIcon("save_icon.png"), "save", self)
+        self.savebutton = QAction(QIcon("res/save_icon.png"), "save", self)
         self.savebutton.triggered.connect(self.painter.save)
         # self.savebutton.setDisabled(True)
         tb.addAction(self.savebutton)
@@ -46,8 +46,6 @@ class MyMainWindow(QMainWindow):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.set_enabled()
-
-
 
 
 class Painter(QWidget):
@@ -77,14 +75,13 @@ class Painter(QWidget):
         self.states = []
         self.redolist = []
 
-
         shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
         shortcut.activated.connect(self.undo)
 
         shortcut2 = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self)
         shortcut2.activated.connect(self.redo)
 
-        ldir = sorted(listdir())
+        ldir = sorted(listdir('out/'))
         print(ldir)
         imgdigits = []
         imgflag = False
@@ -168,9 +165,9 @@ class Painter(QWidget):
     def save(self):
         if not self.kplist:
             return
-        filename = f'img_{self.nimg}.jpg'
+        filename = f'out/img_{self.nimg}.png'
         self.save_img(filename)
-        with open(filename.replace('jpg', 'txt'), 'w') as f:
+        with open(filename.replace('png', 'txt'), 'w') as f:
             f.write(str(self.kplist))
         self.nimg += 1
 
@@ -247,14 +244,14 @@ class Painter(QWidget):
 
     def save_img(self, filename):
         if self.sketch:
-            self.sketch.save(filename, 'jpg')
+            self.sketch.save(filename, 'png')
         else:
-            self.pixmap.save(filename, 'jpg')
+            self.pixmap.save(filename, 'png')
 
     def magnet(self):  # Shift kp to borderlines
         if not self.kplist:
             return
-        filename = 'magnet.png'
+        filename = 'tmp/magnet.png'
         self.save_img(filename)
         img = cv2.imread(filename)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)

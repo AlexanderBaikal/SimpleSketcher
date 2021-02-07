@@ -1,2 +1,2 @@
 # SimpleSketcher
-![Screenshot](https://sun9-64.userapi.com/impg/Gq2BxCLPWAMte0nKseoXjwxad61CR3tkl05Rcg/JaDuextyr7w.jpg?size=538x614&quality=96&proxy=1&sign=0ca4265d3be4edd67d32563ce5fe40a5&type=album)
+![Screenshot](https://sun9-69.userapi.com/impg/SigHcjxK0lGjtbBG-hBwF2eGglkbwvZvHwREkQ/QVPqZBeNTr0.jpg?size=568x639&quality=96&proxy=1&sign=a0967b1a8e1a0e75b75d464246869fe7&type=album)
