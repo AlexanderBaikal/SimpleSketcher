@@ -47,9 +47,7 @@ class MyMainWindow(QMainWindow):
         if event.button() == Qt.LeftButton:
             self.set_enabled()
 
-    def set_enabled(self):
-        if self.painter.save_en:
-            self.savebutton.setDisabled(False)
+
 
 
 class Painter(QWidget):
@@ -79,7 +77,6 @@ class Painter(QWidget):
         self.states = []
         self.redolist = []
 
-        self.save_en = False
 
         shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
         shortcut.activated.connect(self.undo)
@@ -108,7 +105,6 @@ class Painter(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.save_en = True
             self.states.append(self.pixmap.copy())
             if len(self.states) > 3:
                 del self.states[0]
@@ -142,6 +138,8 @@ class Painter(QWidget):
             self.drawing = False
 
     def addKP(self):
+        if not self.actionstype:
+            return
         self.color = Qt.blue
         if not self.sketch:
             print('R')
@@ -149,8 +147,12 @@ class Painter(QWidget):
         self.kpmode = True
 
     def stopKP(self):  # Переключение на рисование
+        if not self.actionstype:
+            return
         self.color = Qt.black
         self.states.append(self.pixmap.copy())
+        if len(self.states) > 3:
+            del self.states[0]
         if self.sketch:
             self.pixmap = self.sketch
         self.undokplist = self.kplist.copy()
@@ -164,7 +166,7 @@ class Painter(QWidget):
         self.update()
 
     def save(self):
-        if not self.save_en:
+        if not self.kplist:
             return
         filename = f'img_{self.nimg}.jpg'
         self.save_img(filename)
@@ -206,7 +208,7 @@ class Painter(QWidget):
                 if actype == 'kp':
                     self.kplist.append(self.redokplist.pop())
                     self.kptext += 1
-                if actype == 'clear' or actype == 'stopkp':  # Если последнее действие было "Clear"
+                if actype == 'clear' or actype == 'stopkp' or actype == 'magnet':  # Если последнее действие было "Clear"
                     self.undokplist = self.redokplist.copy()
                     self.kplist = []
                     self.redokplist = []
@@ -230,7 +232,7 @@ class Painter(QWidget):
                     if self.kplist:
                         self.redokplist.append(self.kplist.pop())  # Убираем точку из списка точек
                         self.kptext -= 1
-                if actype == 'clear' or actype == 'stopkp':  # Если последнее действие было "Clear"
+                if actype == 'clear' or actype == 'stopkp' or actype == 'magnet':  # Если последнее действие было "Clear"
                     if self.undokplist:
                         self.kptext = self.savekptext
                         self.redokplist = self.undokplist.copy()
@@ -258,15 +260,39 @@ class Painter(QWidget):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         img = cv2.bitwise_not(img)
         ret, img = cv2.threshold(img, 200, 255, 0)
-        print(img.shape)
         nonzero = cv2.findNonZero(img)
+
+        self.states.append(self.pixmap.copy())
+        if len(self.states) > 3:
+            del self.states[0]
+        self.undokplist = self.kplist
+        self.savekptext = self.kptext
+        self.redokplist.clear()
+        self.actionstype.append('magnet')
+        self.pixmap = self.sketch.copy()
+
+        fixed_kplist = []
+        self.kptext = 1
         for kp in self.kplist:
             distances = np.sqrt((nonzero[:, :, 0] - kp[0]) ** 2 + (nonzero[:, :, 1] - kp[1]) ** 2)
             nearest_index = np.argmin(distances)
-            print(nonzero[nearest_index])
-            plt.scatter(*nonzero[nearest_index,0])
-        plt.imshow(img, cmap='Greys')
-        plt.show()
+            fixed_kp = nonzero[nearest_index, 0]
+            # print(*fixed_kp)
+            # plt.scatter(*fixed_kp)
+            painter = QPainter(self.pixmap)
+            painter.setPen(QPen(Qt.blue, 3, Qt.SolidLine))
+            painter.drawEllipse(*fixed_kp, 6, 6)
+            painter.setFont(QFont('Arial', 10))
+            painter.drawText(fixed_kp[0] + 5, fixed_kp[1] + 20, str(self.kptext))
+            painter = None  # Important !
+            self.kptext += 1
+            fixed_kplist.append(tuple(fixed_kp))
+        self.update()
+        self.kplist = fixed_kplist
+        print(self.kplist)
+
+        # plt.imshow(img, cmap='Greys')
+        # plt.show()
 
 
 def except_hook(cls, exception, traceback):
