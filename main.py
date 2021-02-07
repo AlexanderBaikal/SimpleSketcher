@@ -1,5 +1,6 @@
 import sys
 import cv2
+from ast import literal_eval
 import numpy as np
 from PyQt5 import QtGui, QtWidgets
 from PyQt5.QtCore import Qt, QPoint
@@ -36,6 +37,9 @@ class MyMainWindow(QMainWindow):
         self.savebutton = QAction(QIcon("res/save_icon.png"), "Save", self)
         self.savebutton.triggered.connect(self.painter.save)
         tb.addAction(self.savebutton)
+        self.checkbutton = QAction(QIcon("res/check_icon.png"), "check", self)
+        self.checkbutton.triggered.connect(self.painter.check)
+        tb.addAction(self.checkbutton)
         self.setLayout(layout)
         self.setWindowTitle("Sketcher. Beta")
 
@@ -286,6 +290,18 @@ class Painter(QWidget):
         self.update()
         self.kp_list = fixed_kplist
         print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
+
+    def check(self):
+        for file in sorted(listdir("out/")):
+            if file.endswith(".png"):
+                img = cv2.imread("out/" + file)
+                txt = file.replace('.png', '.txt')
+                with open("out/" + txt, 'r') as fread:
+                    coords = fread.read()
+                for coord in literal_eval(coords):
+                    img = cv2.circle(img, coord, radius=3, color=(0, 0, 255), thickness=-1)
+                cv2.imwrite("out/test/" + file.replace('.png', '_test.png'), img)
+
 
 
 def except_hook(cls, exception, traceback):
