@@ -182,7 +182,7 @@ class Painter(QWidget):
         self.undo_sketch = self.sketch.copy()
         self.sketch = None
         self.undo_actions_type.append('clear')
-        print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
+        # print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
         self.kp_mode = False
         self.color = Qt.black
         self.update()
@@ -216,7 +216,7 @@ class Painter(QWidget):
                 self.undo_actions_type.append(actype)  # Тип последнего действия
             if len(self.undo_states) > 3:
                 del self.undo_states[0]
-            print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
+            # print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
             self.update()
 
     def undo(self):
@@ -245,7 +245,7 @@ class Painter(QWidget):
                 self.redo_actions_type.append(actype)
             if len(self.redo_states) > 3:
                 del self.redo_states[0]
-            print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
+            # print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
             self.update()
 
     def save_img(self, filename):
@@ -289,7 +289,7 @@ class Painter(QWidget):
             fixed_kplist.append(tuple(fixed_kp))
         self.update()
         self.kp_list = fixed_kplist
-        print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
+        # print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
 
     def check(self):
         for file in sorted(listdir("out/")):
@@ -298,10 +298,11 @@ class Painter(QWidget):
                 txt = file.replace('.png', '.txt')
                 with open("out/" + txt, 'r') as fread:
                     coords = fread.read()
-                for coord in literal_eval(coords):
+                for i, coord in enumerate(literal_eval(coords)):
                     img = cv2.circle(img, coord, radius=3, color=(0, 0, 255), thickness=-1)
+                    img = cv2.putText(img, str(i + 1), (coord[0] + 5, coord[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                      (0, 0, 255), 1)
                 cv2.imwrite("out/test/" + file.replace('.png', '_test.png'), img)
-
 
 
 def except_hook(cls, exception, traceback):
@@ -323,3 +324,4 @@ if __name__ == '__main__':
 # Повороты, аугментация
 # Сохранение скетча после отмены, очистки, повторного добавления точек
 # Disable кнопки
+# 4eb0ff
