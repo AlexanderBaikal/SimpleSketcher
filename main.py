@@ -16,16 +16,16 @@ class MyMainWindow(QMainWindow):
         self.initUI()
 
     def initUI(self):
-        self.setWindowIcon(QtGui.QIcon('res/sk_icon.png'))
+        self.setWindowIcon(QtGui.QIcon('res/app_icon.png'))
         self.painter = Painter()
         self.setCentralWidget(self.painter)
         # Toolbar
         layout = QGridLayout()
         tb = self.addToolBar("File")
-        add = QAction(QIcon("res/addkp_icon.png"), "Add keypoints", self)
+        add = QAction(QIcon("res/aim_icon.png"), "Add keypoints", self)
         add.triggered.connect(self.painter.addKP)
         tb.addAction(add)
-        stop = QAction(QIcon("res/stopkp_icon.png"), "Add sketch", self)
+        stop = QAction(QIcon("res/draw_icon.png"), "Add sketch", self)
         stop.triggered.connect(self.painter.stopKP)
         tb.addAction(stop)
         clear = QAction(QIcon("res/clear_icon.png"), "Clear all", self)

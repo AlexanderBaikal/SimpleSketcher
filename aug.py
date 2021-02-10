@@ -1,14 +1,21 @@
 import sys
+import threading
+from itertools import combinations
+from os.path import exists
+from queue import Queue
+from time import time, sleep
+
 import cv2
 from ast import literal_eval
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageChops
 from PyQt5 import QtGui, QtWidgets
-from PyQt5.QtCore import Qt, QPoint
+from PyQt5.QtCore import Qt, QPoint, QThread, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, \
-    QMainWindow, QAction
+    QMainWindow, QAction, QMessageBox, QProgressBar, QPushButton
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QFont, QIcon
-from os import listdir, mkdir
+from os import listdir, mkdir, remove
+import imagehash
 
 
 class MyMainWindow(QMainWindow):
@@ -17,35 +24,56 @@ class MyMainWindow(QMainWindow):
         self.initUI()
 
     def initUI(self):
-        self.setWindowIcon(QtGui.QIcon('res/sk_icon.png'))
-        self.painter = Painter()
-        self.setCentralWidget(self.painter)
+        self.setWindowIcon(QtGui.QIcon('res/aug_icon.png'))
+        self.myprogressbar = MyProgressbar()
+        self.setCentralWidget(self.myprogressbar)
         # Toolbar
         layout = QGridLayout()
         tb = self.addToolBar("File")
         self.augbutton = QAction(QIcon("res/aug_icon.png"), "Augmentation", self)
-        self.augbutton.triggered.connect(self.painter.aug)
+        self.augbutton.triggered.connect(self.myprogressbar.aug)
         tb.addAction(self.augbutton)
         self.checkbutton = QAction(QIcon("res/check_icon.png"), "Check", self)
-        self.checkbutton.triggered.connect(self.painter.check)
+        self.checkbutton.triggered.connect(self.myprogressbar.check)
         tb.addAction(self.checkbutton)
+        self.comparebutton = QAction(QIcon("res/compare_icon.png"), "Remove Duplicates", self)
+        self.comparebutton.triggered.connect(self.myprogressbar.launch_progress_bar)
+        tb.addAction(self.comparebutton)
         self.setLayout(layout)
         self.setWindowTitle("Aug. Beta")
 
 
-class Painter(QWidget):
-    def __init__(self):
+class ProgressbarThread(QThread):
+    update_progressbar = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__()
+
+    def run(self):
+        self.myprogressbar = MyProgressbar()
+        self.myprogressbar.compare(self)
+
+
+class MyProgressbar(QWidget):
+    def __init__(self, parent=None):
         super().__init__()
         self.initUI()
 
     def initUI(self):
-        self.setGeometry(100, 100, 500, 500)
+        self.progressbar = QProgressBar(self)
+        self.progressbar.setAlignment(Qt.AlignCenter)
+        self.progressbar.setGeometry(100, 50, 300, 50)
+        self.setGeometry(100, 100, 500, 200)
         self.setFixedSize(self.width(), self.height())
-        self.pixmap = QPixmap(self.width(), self.height())
-        self.pixmap.fill(QColor("white"))
-        self.color = Qt.black
-        self.kp_text = 1
-        self.kp_list = []
+        self.i_compare = 0
+
+    def launch_progress_bar(self):
+        self.ProgressbarThread_intance = ProgressbarThread()
+        self.ProgressbarThread_intance.update_progressbar.connect(self.updateProgressbar)
+        self.ProgressbarThread_intance.start()
+
+    def updateProgressbar(self, value):
+        self.progressbar.setValue(value)
 
     def aug(self):
         if 'aug' not in listdir('out/'):
@@ -62,9 +90,8 @@ class Painter(QWidget):
                 self.aug_rotate(im, coords, fpath)
                 self.aug_flip(im, coords, fpath)
                 percent = i / len(files) * 100
-                print(str(round(percent, 2)) + '%')
-        #         self.setWindowTitle(str(percent) + '%')
-        # self.setWindowTitle("Aug. Beta")
+                percent = str(round(percent, 2)) + '%'
+                print(percent)
 
     def aug_rotate(self, im, coords, fpath):
         for i in range(3):
@@ -122,9 +149,85 @@ class Painter(QWidget):
                                       (0, 0, 255), 1)
                 cv2.imwrite("out/aug/aug_test/" + file.replace('.png', '_test.png'), img)
             percent = num / len(files) * 100
-            print(str(round(percent, 2)) + '%')
-        #     self.setWindowTitle(str(percent) + '%')
-        # self.setWindowTitle('Aug. Beta')
+            percent = str(round(percent, 2)) + '%'
+            print(percent)
+
+    def difference_images(self, h1, h2, f1, f2, path=''):
+        if (h1 == h2):
+            self.rm_images.append((path + f1, path + f2, str(h1)))
+        return
+
+    def make_hash(self, array, path=''):
+        hashes = []
+        for el in array:
+            img = Image.open(path + el)
+            hash = imagehash.phash(img)
+            hashes.append(hash)
+        return hashes
+
+    def compare(self, cls=None):
+        start = time()
+        self.i_compare = 0
+        self.rm_images = []
+
+        path = 'out/'
+        imgs = sorted(filter(lambda x: x.endswith('.png'), listdir(path)),
+                      key=lambda x: int(x.replace('img_', '').replace('.png', '')))
+
+        print(imgs)
+        nb_images = len(list(combinations(imgs, 2)))
+        # print(nb_images)
+
+        hashes = self.make_hash(imgs, path)
+
+        check_file = 0  # Проверяемый файл
+        current_file = 0  # Текущий файл
+        old_percent = 0  # percent
+
+        while check_file < len(hashes) and current_file < len(hashes):
+            self.i_compare += 1
+            percent = int(self.i_compare / nb_images * 100)
+            # print(percent)
+            # self.progressbar.setValue(percent)
+            if cls and percent != old_percent:
+                cls.update_progressbar.emit(percent)
+                old_percent = percent
+            if current_file == check_file:
+                current_file += 1
+                continue
+            self.difference_images(hashes[current_file], hashes[check_file],
+                                   imgs[current_file], imgs[check_file], path)
+            current_file += 1
+            if current_file == len(imgs):
+                check_file += 1
+                current_file = check_file
+
+        if self.rm_images:
+            # print(self.rm_images)
+            duplicates = self.drop_duplicates()
+            for k, v in duplicates.items():
+                v = sorted(filter(lambda x: x.endswith('.png'), v),
+                           key=lambda x: int(x.replace(path + 'img_', '').replace('.png', '')))
+                orig = v[0]
+                dropped = v[1:]
+                print(orig, dropped)
+
+        end = time()
+        self.progressbar.setValue(100)
+        print('Done', str(end - start))
+
+    def drop_duplicates(self):
+        hash_dict = dict()
+        if self.rm_images:
+            for group in self.rm_images:
+                if group[2] in hash_dict.keys():
+                    if group[0] not in hash_dict[group[2]]:
+                        hash_dict[group[2]].append(group[0])
+                    if group[1] not in hash_dict[group[2]]:
+                        hash_dict[group[2]].append(group[1])
+                else:
+                    hash_dict[group[2]] = [group[0], group[1]]
+        return hash_dict
 
 
 def except_hook(cls, exception, traceback):
@@ -138,6 +241,7 @@ if __name__ == '__main__':
     example.show()
     sys.exit(app.exec_())
 
-
 # Повороты, аугментация
 # 4eb0ff
+# pyinstaller --onefile --noconsole --icon=aug_icon.ico aug.py
+# Увеличить скорость для остальных кнопок
