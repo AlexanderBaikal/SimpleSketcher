@@ -3,6 +3,7 @@ import threading
 from itertools import combinations
 from os.path import exists
 from queue import Queue
+from shutil import copy2
 from time import time, sleep
 
 import cv2
@@ -10,11 +11,11 @@ from ast import literal_eval
 import numpy as np
 from PIL import Image, ImageChops
 from PyQt5 import QtGui, QtWidgets
-from PyQt5.QtCore import Qt, QPoint, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QPoint, QThread, pyqtSignal, QRectF
 from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, \
-    QMainWindow, QAction, QMessageBox, QProgressBar, QPushButton
+    QMainWindow, QAction, QMessageBox, QProgressBar, QPushButton, QLabel, QFrame
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QFont, QIcon
-from os import listdir, mkdir, remove
+from os import listdir, mkdir, remove, walk
 import imagehash
 
 
@@ -25,19 +26,23 @@ class MyMainWindow(QMainWindow):
 
     def initUI(self):
         self.setWindowIcon(QtGui.QIcon('res/aug_icon.png'))
-        self.myprogressbar = MyProgressbar()
+        self.myprogressbar = MyProgressbar(self)
+        # self.myprogressbar.parent(self)  #########
         self.setCentralWidget(self.myprogressbar)
         # Toolbar
         layout = QGridLayout()
         tb = self.addToolBar("File")
         self.augbutton = QAction(QIcon("res/aug_icon.png"), "Augmentation", self)
-        self.augbutton.triggered.connect(self.myprogressbar.aug)
+        self.augbutton.triggered.connect(self.myprogressbar.pre_launch_aug)
         tb.addAction(self.augbutton)
         self.checkbutton = QAction(QIcon("res/check_icon.png"), "Check", self)
-        self.checkbutton.triggered.connect(self.myprogressbar.check)
+        self.checkbutton.triggered.connect(self.myprogressbar.pre_launch_check)
         tb.addAction(self.checkbutton)
+        self.mergebutton = QAction(QIcon("res/copy_icon.png"), "Merge", self)
+        self.mergebutton.triggered.connect(self.myprogressbar.pre_launch_merge)
+        tb.addAction(self.mergebutton)
         self.comparebutton = QAction(QIcon("res/compare_icon.png"), "Remove Duplicates", self)
-        self.comparebutton.triggered.connect(self.myprogressbar.launch_progress_bar)
+        self.comparebutton.triggered.connect(self.myprogressbar.pre_launch_compare)
         tb.addAction(self.comparebutton)
         self.setLayout(layout)
         self.setWindowTitle("Aug. Beta")
@@ -45,19 +50,34 @@ class MyMainWindow(QMainWindow):
 
 class ProgressbarThread(QThread):
     update_progressbar = pyqtSignal(int)
+    update_label = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, action_name, parent=None):
         super().__init__()
+        self.action_name = action_name
+        self.parent_widget = parent
 
     def run(self):
         self.myprogressbar = MyProgressbar()
-        self.myprogressbar.compare(self)
+        if self.action_name == 'compare':
+            self.myprogressbar.compare(self)
+        elif self.action_name == 'merge':
+            self.myprogressbar.merge(self)
+        elif self.action_name == 'check':
+            self.myprogressbar.check(self)
+        elif self.action_name == 'aug':
+            self.myprogressbar.aug(self)
+        self.parent_widget.myprogressbar.enable_buttons()
+
+
+
 
 
 class MyProgressbar(QWidget):
     def __init__(self, parent=None):
         super().__init__()
         self.initUI()
+        self.parent_widget = parent
 
     def initUI(self):
         self.progressbar = QProgressBar(self)
@@ -65,17 +85,58 @@ class MyProgressbar(QWidget):
         self.progressbar.setGeometry(100, 50, 300, 50)
         self.setGeometry(100, 100, 500, 200)
         self.setFixedSize(self.width(), self.height())
-        self.i_compare = 0
+        self.i_progress = 0
 
-    def launch_progress_bar(self):
-        self.ProgressbarThread_intance = ProgressbarThread()
+        self.lbl = QLabel(self)
+        # self.lbl.setText('Choose an action')
+        self.lbl.setAlignment(Qt.AlignCenter)
+        self.lbl.setGeometry(20, 10, self.width() - 40, 30)
+
+    def pre_launch_check(self):
+        self.launch_progress_bar('check')
+
+    def pre_launch_compare(self):
+        self.launch_progress_bar('compare')
+
+    def pre_launch_merge(self):
+        self.launch_progress_bar('merge')
+
+    def pre_launch_aug(self):
+        self.launch_progress_bar('aug')
+
+    def launch_progress_bar(self, action_name):
+        self.disable_buttons()
+        self.ProgressbarThread_intance = ProgressbarThread(action_name, self.parent_widget)
         self.ProgressbarThread_intance.update_progressbar.connect(self.updateProgressbar)
+        self.ProgressbarThread_intance.update_label.connect(self.updateLabel)
         self.ProgressbarThread_intance.start()
+
+
 
     def updateProgressbar(self, value):
         self.progressbar.setValue(value)
 
-    def aug(self):
+    def updateLabel(self, string):
+        self.lbl.setText(string)
+
+    def enable_buttons(self):
+        self.parent_widget
+        if self.parent_widget:
+            self.parent_widget.checkbutton.setDisabled(False)
+            self.parent_widget.comparebutton.setDisabled(False)
+            self.parent_widget.mergebutton.setDisabled(False)
+            self.parent_widget.augbutton.setDisabled(False)
+
+    def disable_buttons(self):
+        if self.parent_widget:
+            self.parent_widget.checkbutton.setDisabled(True)
+            self.parent_widget.comparebutton.setDisabled(True)
+            self.parent_widget.mergebutton.setDisabled(True)
+            self.parent_widget.augbutton.setDisabled(True)
+
+    def aug(self, cls=None):
+        if cls:
+            cls.update_label.emit('Augmentation...')
         if 'aug' not in listdir('out/'):
             mkdir('out/aug/')
         files = sorted(listdir('out/'))
@@ -84,14 +145,19 @@ class MyProgressbar(QWidget):
                 fpath = "out/" + fname
                 im = Image.open(fpath)
                 txt = fpath.replace('.png', '.txt')
+                if not exists(txt) or not exists(fpath):
+                    continue
                 with open(txt, 'r') as fread:
                     coords = fread.read()
                 coords = literal_eval(coords)
                 self.aug_rotate(im, coords, fpath)
                 self.aug_flip(im, coords, fpath)
-                percent = i / len(files) * 100
-                percent = str(round(percent, 2)) + '%'
-                print(percent)
+                percent = int(i / len(files) * 100)
+                cls.update_progressbar.emit(percent)
+        if cls:
+            cls.update_progressbar.emit(100)
+            self.enable_buttons()
+            cls.update_label.emit('Augmentation done')
 
     def aug_rotate(self, im, coords, fpath):
         for i in range(3):
@@ -133,7 +199,47 @@ class MyProgressbar(QWidget):
             with open(path.replace('.png', '.txt'), 'w') as f:
                 f.write(str(txt))
 
-    def check(self):
+    def merge(self, cls=None):
+        if cls:
+            cls.update_label.emit('Merging folders...')
+        self.i_progress = 0
+        inpaths = 'others\\', 'out\\'
+        outpath = 'merged\\'
+        ncopy = 0  # Might be changed to num of last el + 1
+        old_percent = 0
+        nb_files = sum([len(files) for inpath in inpaths for r, d, files in walk(inpath) if 'test' not in d])
+
+        if 'merged' not in listdir():
+            mkdir(outpath)
+        for inpath in inpaths:
+            for dirname, subdirs, fnames in walk(inpath):
+
+                if 'test' in dirname:
+                    continue
+                for fname in fnames:
+                    self.i_progress += 1
+                    if fname.endswith('.png'):
+                        src_png = dirname + '\\' + fname
+                        src_txt = dirname + '\\' + fname.replace('.png', '.txt')
+                        # print(src_png, src_txt)
+                        if not exists(src_png) or not exists(src_txt):
+                            # print("doesn't exist")
+                            continue
+                        copy2(src_png, outpath + 'img_' + str(ncopy) + '.png')
+                        copy2(src_txt, outpath + 'img_' + str(ncopy) + '.txt')
+                        ncopy += 1
+                        percent = int(self.i_progress / nb_files * 100)
+                        if cls and percent != old_percent:
+                            cls.update_progressbar.emit(percent)
+                            old_percent = percent
+        if cls:
+            cls.update_progressbar.emit(100)
+            self.enable_buttons()
+            cls.update_label.emit('Merging folders done')
+
+    def check(self, cls=None):
+        if cls:
+            cls.update_label.emit('Checking files...')
         if 'aug_test' not in listdir('out/aug/'):
             mkdir('out/aug/aug_test/')
         files = sorted(listdir("out/aug/"))
@@ -148,47 +254,54 @@ class MyProgressbar(QWidget):
                     img = cv2.putText(img, str(i + 1), (coord[0] + 5, coord[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                       (0, 0, 255), 1)
                 cv2.imwrite("out/aug/aug_test/" + file.replace('.png', '_test.png'), img)
-            percent = num / len(files) * 100
-            percent = str(round(percent, 2)) + '%'
-            print(percent)
+            percent = int(num / len(files) * 100)
+            if cls:
+                cls.update_progressbar.emit(percent)
+        if cls:
+            cls.update_progressbar.emit(100)
+            self.enable_buttons()
+            cls.update_label.emit('Checking files done')
 
     def difference_images(self, h1, h2, f1, f2, path=''):
         if (h1 == h2):
             self.rm_images.append((path + f1, path + f2, str(h1)))
         return
 
-    def make_hash(self, array, path=''):
+    def make_hash(self, array, path='', cls=None):
+        cls.update_label.emit('Extracting hashes...')
         hashes = []
-        for el in array:
+        for i, el in enumerate(array):
             img = Image.open(path + el)
             hash = imagehash.phash(img)
             hashes.append(hash)
+            if cls:
+                percent = int(i / len(array) * 100)
+                cls.update_progressbar.emit(percent)
         return hashes
 
     def compare(self, cls=None):
         start = time()
-        self.i_compare = 0
+        self.i_progress = 0
         self.rm_images = []
+        if cls:
+            cls.update_progressbar.emit(0)
 
-        path = 'out/'
+        path = 'merged/'
         imgs = sorted(filter(lambda x: x.endswith('.png'), listdir(path)),
                       key=lambda x: int(x.replace('img_', '').replace('.png', '')))
-
         print(imgs)
-        nb_images = len(list(combinations(imgs, 2)))
-        # print(nb_images)
+        nb_images = len(list(combinations(imgs, 2)))  # Should be replaced with formula
 
-        hashes = self.make_hash(imgs, path)
+        hashes = self.make_hash(imgs, path, cls)
 
         check_file = 0  # Проверяемый файл
         current_file = 0  # Текущий файл
         old_percent = 0  # percent
 
         while check_file < len(hashes) and current_file < len(hashes):
-            self.i_compare += 1
-            percent = int(self.i_compare / nb_images * 100)
-            # print(percent)
-            # self.progressbar.setValue(percent)
+            cls.update_label.emit('Comparison hashes...')
+            self.i_progress += 1
+            percent = int(self.i_progress / nb_images * 100)
             if cls and percent != old_percent:
                 cls.update_progressbar.emit(percent)
                 old_percent = percent
@@ -214,6 +327,8 @@ class MyProgressbar(QWidget):
 
         end = time()
         self.progressbar.setValue(100)
+        self.enable_buttons()
+        cls.update_label.emit('Comparison done')
         print('Done', str(end - start))
 
     def drop_duplicates(self):
@@ -241,7 +356,8 @@ if __name__ == '__main__':
     example.show()
     sys.exit(app.exec_())
 
-# Повороты, аугментация
+# Добавить настройки папок
 # 4eb0ff
 # pyinstaller --onefile --noconsole --icon=aug_icon.ico aug.py
-# Увеличить скорость для остальных кнопок
+# Повторяющиеся хэши ???
+
