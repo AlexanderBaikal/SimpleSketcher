@@ -1,2 +1,5 @@
 opencv-python
 PyQt5
+ImageHash
+Pillow
+numpy
