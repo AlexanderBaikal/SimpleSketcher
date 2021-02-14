@@ -27,6 +27,8 @@ class MyMainWindow(QMainWindow):
         self.setWindowIcon(QtGui.QIcon('res/aug_app_icon.png'))
         self.merge_dst_dir = 'merged'
         self.merge_src_dirs = ['others', 'out']
+        self.check_dir = 'out'
+        self.aug_dir = 'out'
         self.myprogressbar = MyProgressbar(self)
         self.setCentralWidget(self.myprogressbar)
         # Toolbar
@@ -51,7 +53,6 @@ class MyMainWindow(QMainWindow):
         self.setWindowTitle("Aug. Beta")
         self.mysettings = []
 
-
     def settings(self):
         self.mysettings = MySettings(self)
         self.setDisabled(True)
@@ -69,19 +70,22 @@ class MySettings(QWidget, Ui_Form):
         self.setupUi(self)
         self.initUI()
 
-
     def initUI(self):
         self.setWindowIcon(QtGui.QIcon('res/set_icon.png'))
         self.setWindowTitle('Settings')
         self.setFixedSize(self.width(), self.height())
         self.pushButton.clicked.connect(self.open_dirs)
-        self.pushButton_2.clicked.connect(self.open_dir)
+        self.pushButton_2.clicked.connect(self.open_merge_dir)
         self.pushButton_3.clicked.connect(self.save)
         self.pushButton_4.clicked.connect(self.reset)
         self.pushButton_5.clicked.connect(self.rm_selected)
+        self.pushButton_6.clicked.connect(self.open_check_dir)
+        self.pushButton_7.clicked.connect(self.open_aug_dir)
         self.listView.setSelectionMode(QAbstractItemView.MultiSelection)
         self.merge_src_dirs = self.parent_widget.merge_src_dirs.copy()
         self.merge_dst_dir = self.parent_widget.merge_dst_dir
+        self.aug_dir = self.parent_widget.aug_dir
+        self.check_dir = self.parent_widget.check_dir
         self.update_lw()
 
     def open_dirs(self):
@@ -94,14 +98,42 @@ class MySettings(QWidget, Ui_Form):
         self.merge_src_dirs.append(short_dir + '\t' + dir_name)
         self.update_lw()
 
-    def open_dir(self):
+    def open_check_dir(self):
+        self.open_dir('check')
+
+    def open_aug_dir(self):
+        self.open_dir('aug')
+
+    def open_merge_dir(self):
+        self.open_dir('merge')
+
+    def open_dir(self, arg):
+        if arg == 'merge':
+            cdir = self.merge_dst_dir
+        elif arg == 'check':
+            cdir = self.check_dir
+        elif arg == 'aug':
+            cdir = self.aug_dir
         ap = len(abspath("")) + 1
+
         dir_name = QFileDialog.getExistingDirectory(self, 'Выберите папку')
+        if arg == 'aug' or arg == 'check':
+            while not (sum(f.endswith('.png') for f in listdir(dir_name)) and
+                       sum(f.endswith('.txt') for f in listdir(dir_name))):
+                print('try again')
+                dir_name = QFileDialog.getExistingDirectory(self, 'Выберите папку')
+
         short_dir = dir_name[ap:]
-        if short_dir in self.merge_dst_dir.split('\t')[0]:
+        if short_dir in cdir.split('\t')[0]:
             print('duplicate')
             return
-        self.merge_dst_dir = short_dir + '\t' + dir_name
+        cdir = short_dir + '\t' + dir_name
+        if arg == 'merge':
+            self.merge_dst_dir = cdir
+        elif arg == 'check':
+            self.check_dir = cdir
+        elif arg == 'aug':
+            self.aug_dir = cdir
         self.update_lw()
 
     def rm_selected(self):
@@ -117,12 +149,15 @@ class MySettings(QWidget, Ui_Form):
         self.listView.addItems(self.merge_src_dirs)
         self.listView_2.clear()
         self.listView_2.addItem(self.merge_dst_dir)
+        self.label_5.setText(self.check_dir.split('\t')[0])
+        self.label_6.setText(self.aug_dir.split('\t')[0])
 
     def save(self):
         self.parent_widget.merge_src_dirs = list(map(lambda x: x.split('\t')[0], self.merge_src_dirs.copy()))
         self.parent_widget.merge_dst_dir = self.merge_dst_dir.split('\t')[0]
-        print(self.parent_widget.merge_src_dirs)
-        print(self.parent_widget.merge_dst_dir)
+        self.parent_widget.aug_dir = self.aug_dir.split('\t')[0]
+        print(self.parent_widget.aug_dir, self.aug_dir.split('\t')[0])
+        self.parent_widget.check_dir = self.check_dir.split('\t')[0]
         self.myclose()
 
     def reset(self):
@@ -166,12 +201,20 @@ class MyProgressbar(QWidget):
         self.parent_widget = parent
         self.initUI()
 
-
     def initUI(self):
         self.progressbar = QProgressBar(self)
+        self.progressbar.setStyleSheet("QProgressBar{border: none;"
+                                       "background: transparent;"
+                                       "border-radius: 7px;}"
+                                       "QProgressBar::chunk{"
+                                       "background: #4eb0ff;"
+                                       "border-radius: 7px;}"
+                                       )
+
         self.progressbar.setAlignment(Qt.AlignCenter)
-        self.progressbar.setGeometry(100, 50, 300, 50)
-        self.setGeometry(100, 100, 500, 200)
+        self.setGeometry(100, 100, 500, 100)
+        self.progressbar.setGeometry(5, self.height() - 20, self.width() - 10, 15)
+
         self.setFixedSize(self.width(), self.height())
         self.i_progress = 0
         self.lbl = QLabel(self)
@@ -179,6 +222,8 @@ class MyProgressbar(QWidget):
         self.lbl.setGeometry(20, 10, self.width() - 40, 30)
         self.merge_src_dirs = self.parent_widget.merge_src_dirs
         self.merge_dst_dir = self.parent_widget.merge_dst_dir
+        self.check_dir = self.parent_widget.check_dir
+        self.aug_dir = self.parent_widget.aug_dir
 
     def pre_launch_check(self):
         self.launch_progress_bar('check')
@@ -225,12 +270,12 @@ class MyProgressbar(QWidget):
     def aug(self, cls=None):
         if cls:
             cls.update_label.emit('Augmentation...')
-        if 'aug' not in listdir('out/'):
-            mkdir('out/aug/')
-        files = sorted(listdir('out/'))
+        if 'aug' not in listdir(self.aug_dir):
+            mkdir(self.aug_dir + '/aug/')
+        files = sorted(listdir(self.aug_dir))
         for i, fname in enumerate(files):  # Ищем изображения
             if 'img_' in fname and fname.endswith('.png'):
-                fpath = "out/" + fname
+                fpath = self.aug_dir + "/" + fname
                 im = Image.open(fpath)
                 txt = fpath.replace('.png', '.txt')
                 if not exists(txt) or not exists(fpath):
@@ -250,7 +295,8 @@ class MyProgressbar(QWidget):
     def aug_rotate(self, im, coords, fpath):
         for i in range(3):
             im = im.rotate(90)
-            path = fpath.replace('out/', 'out/aug/').replace('.png', 'R_' + str(i) + '.png')
+            path = fpath.replace(self.aug_dir + '/', self.aug_dir +
+                                 '/aug/').replace('.png', 'R_' + str(i) + '.png')
             im.save(path)
             if i > 0:
                 coords = txt.copy()
@@ -270,7 +316,8 @@ class MyProgressbar(QWidget):
     def aug_flip(self, im, coords, fpath):
         for i, mode in enumerate([Image.FLIP_LEFT_RIGHT, Image.FLIP_TOP_BOTTOM]):
             image = im.transpose(mode)
-            path = fpath.replace('out/', 'out/aug/').replace('.png', 'F_' + str(i) + '.png')
+            path = fpath.replace(self.aug_dir + '/', self.aug_dir +
+                                 '/aug/').replace('.png', 'F_' + str(i) + '.png')
             image.save(path)
             txt = []
             for coord in coords:
@@ -334,21 +381,26 @@ class MyProgressbar(QWidget):
     def check(self, cls=None):
         if cls:
             cls.update_label.emit('Checking files...')
-        if 'aug_test' not in listdir('out/aug/'):
-            mkdir('out/aug/aug_test/')
-        files = sorted(listdir("out/aug/"))
+        print(self.check_dir)
+        print(listdir(self.check_dir + '/aug/'))
+        if 'aug_test' not in listdir(self.check_dir + '/aug/'):
+            mkdir(self.check_dir + '/aug/aug_test/')
+        files = sorted(listdir(self.check_dir + "/aug/"))
+        print(files)
         for num, file in enumerate(files):
             if file.endswith(".png"):
-                img = cv2.imread("out/aug/" + file)
+                img = cv2.imread(self.check_dir + "/aug/" + file)
                 txt = file.replace('.png', '.txt')
-                with open("out/aug/" + txt, 'r') as fread:
+                with open(self.check_dir + "/aug/" + txt, "r") as fread:
                     coords = fread.read()
                 for i, coord in enumerate(literal_eval(coords)):
                     img = cv2.circle(img, coord, radius=3, color=(0, 0, 255), thickness=-1)
                     img = cv2.putText(img, str(i + 1), (coord[0] + 5, coord[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                       (0, 0, 255), 1)
-                cv2.imwrite("out/aug/aug_test/" + file.replace('.png', '_test.png'), img)
+                cv2.imwrite(self.check_dir + "/aug/aug_test/" + file.replace('.png', '_test.png'), img)
+                # print(self.check_dir + "/aug/aug_test/" + file.replace('.png', '_test.png'))
             percent = int(num / len(files) * 100)
+
             if cls:
                 cls.update_progressbar.emit(percent)
         if cls:

@@ -1,4 +1,6 @@
 import sys
+from os.path import exists
+
 import cv2
 from ast import literal_eval
 import numpy as np
@@ -42,10 +44,6 @@ class MyMainWindow(QMainWindow):
         tb.addAction(self.checkbutton)
         self.setLayout(layout)
         self.setWindowTitle("Sketcher. Beta")
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.set_enabled()
 
 
 class Painter(QWidget):
@@ -179,7 +177,8 @@ class Painter(QWidget):
         self.undo_kp_list = self.kp_list.copy()  # Сохраняем точки для отмены
         self.kp_list.clear()
         self.redo_kp_list.clear()
-        self.undo_sketch = self.sketch.copy()
+        if self.sketch:
+            self.undo_sketch = self.sketch.copy()
         self.sketch = None
         self.undo_actions_type.append('clear')
         # print(self.kp_list, ' ||| ', self.redo_kp_list, ' ||| ', self.undo_kp_list)
@@ -296,6 +295,8 @@ class Painter(QWidget):
             if file.endswith(".png"):
                 img = cv2.imread("out/" + file)
                 txt = file.replace('.png', '.txt')
+                if not exists("out/" + file) or not exists("out/" + txt):
+                    continue
                 with open("out/" + txt, 'r') as fread:
                     coords = fread.read()
                 for i, coord in enumerate(literal_eval(coords)):
