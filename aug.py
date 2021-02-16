@@ -1,3 +1,4 @@
+import shutil
 import sys
 from ast import literal_eval
 from itertools import combinations
@@ -10,8 +11,8 @@ import cv2
 import imagehash
 from PIL import Image
 from PyQt5 import QtGui
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
+from PyQt5.QtGui import QIcon, QMovie
 from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, \
     QMainWindow, QAction, QProgressBar, QLabel, QFileDialog, QAbstractItemView
 
@@ -29,8 +30,11 @@ class MyMainWindow(QMainWindow):
         self.merge_src_dirs = ['others', 'out']
         self.check_dir = 'out'
         self.aug_dir = 'out'
+        self.compare_dir = self.merge_dst_dir
+        self.include_aug = False
         self.myprogressbar = MyProgressbar(self)
         self.setCentralWidget(self.myprogressbar)
+        self.setStyleSheet("background-color:white;")
         # Toolbar
         layout = QGridLayout()
         tb = self.addToolBar("File")
@@ -75,17 +79,28 @@ class MySettings(QWidget, Ui_Form):
         self.setWindowTitle('Settings')
         self.setFixedSize(self.width(), self.height())
         self.pushButton.clicked.connect(self.open_dirs)
+        self.pushButton.setIcon(QIcon("res/open_dir_icon.png"))
         self.pushButton_2.clicked.connect(self.open_merge_dir)
+        self.pushButton_2.setIcon(QIcon("res/copy_icon.png"))
         self.pushButton_3.clicked.connect(self.save)
+        self.pushButton_3.setIcon(QIcon("res/save_icon.png"))
         self.pushButton_4.clicked.connect(self.reset)
+        self.pushButton_4.setIcon(QIcon("res/cancel_icon.png"))
         self.pushButton_5.clicked.connect(self.rm_selected)
+        self.pushButton_5.setIcon(QIcon("res/remove_icon.png"))
         self.pushButton_6.clicked.connect(self.open_check_dir)
+        self.pushButton_6.setIcon(QIcon("res/check_icon.png"))
         self.pushButton_7.clicked.connect(self.open_aug_dir)
+        self.pushButton_7.setIcon(QIcon("res/aug_icon.png"))
+        self.pushButton_8.clicked.connect(self.open_compare_dir)
+        self.pushButton_8.setIcon(QIcon("res/compare_icon.png"))
         self.listView.setSelectionMode(QAbstractItemView.MultiSelection)
         self.merge_src_dirs = self.parent_widget.merge_src_dirs.copy()
         self.merge_dst_dir = self.parent_widget.merge_dst_dir
         self.aug_dir = self.parent_widget.aug_dir
+        self.compare_dir = self.parent_widget.compare_dir
         self.check_dir = self.parent_widget.check_dir
+        self.include_aug = self.checkBox.isChecked()
         self.update_lw()
 
     def open_dirs(self):
@@ -107,6 +122,9 @@ class MySettings(QWidget, Ui_Form):
     def open_merge_dir(self):
         self.open_dir('merge')
 
+    def open_compare_dir(self):
+        self.open_dir('compare')
+
     def open_dir(self, arg):
         if arg == 'merge':
             cdir = self.merge_dst_dir
@@ -114,15 +132,20 @@ class MySettings(QWidget, Ui_Form):
             cdir = self.check_dir
         elif arg == 'aug':
             cdir = self.aug_dir
+        elif arg == 'compare':
+            cdir = self.compare_dir
         ap = len(abspath("")) + 1
 
         dir_name = QFileDialog.getExistingDirectory(self, 'Выберите папку')
+        if not dir_name:
+            return
         if arg == 'aug' or arg == 'check':
             while not (sum(f.endswith('.png') for f in listdir(dir_name)) and
                        sum(f.endswith('.txt') for f in listdir(dir_name))):
                 print('try again')
                 dir_name = QFileDialog.getExistingDirectory(self, 'Выберите папку')
 
+        print(repr(dir_name))
         short_dir = dir_name[ap:]
         if short_dir in cdir.split('\t')[0]:
             print('duplicate')
@@ -134,6 +157,8 @@ class MySettings(QWidget, Ui_Form):
             self.check_dir = cdir
         elif arg == 'aug':
             self.aug_dir = cdir
+        elif arg == 'compare':
+            self.compare_dir = cdir
         self.update_lw()
 
     def rm_selected(self):
@@ -147,17 +172,19 @@ class MySettings(QWidget, Ui_Form):
     def update_lw(self):
         self.listView.clear()
         self.listView.addItems(self.merge_src_dirs)
-        self.listView_2.clear()
-        self.listView_2.addItem(self.merge_dst_dir)
+        self.label_7.setText(self.merge_dst_dir)
         self.label_5.setText(self.check_dir.split('\t')[0])
         self.label_6.setText(self.aug_dir.split('\t')[0])
+        self.label_9.setText(self.compare_dir.split('\t')[0])
+        self.include_aug = self.checkBox.isChecked()
 
     def save(self):
         self.parent_widget.merge_src_dirs = list(map(lambda x: x.split('\t')[0], self.merge_src_dirs.copy()))
         self.parent_widget.merge_dst_dir = self.merge_dst_dir.split('\t')[0]
         self.parent_widget.aug_dir = self.aug_dir.split('\t')[0]
-        print(self.parent_widget.aug_dir, self.aug_dir.split('\t')[0])
         self.parent_widget.check_dir = self.check_dir.split('\t')[0]
+        self.parent_widget.include_aug = self.include_aug
+        self.parent_widget.compare_dir = self.compare_dir.split('\t')[0]
         self.myclose()
 
     def reset(self):
@@ -202,6 +229,7 @@ class MyProgressbar(QWidget):
         self.initUI()
 
     def initUI(self):
+        self.setStyleSheet("background-color:white;")
         self.progressbar = QProgressBar(self)
         self.progressbar.setStyleSheet("QProgressBar{border: none;"
                                        "background: transparent;"
@@ -224,6 +252,18 @@ class MyProgressbar(QWidget):
         self.merge_dst_dir = self.parent_widget.merge_dst_dir
         self.check_dir = self.parent_widget.check_dir
         self.aug_dir = self.parent_widget.aug_dir
+        self.compare_dir = self.parent_widget.compare_dir
+        self.include_aug = self.parent_widget.include_aug
+
+
+
+        self.movie = QMovie("res/intro.gif")
+        self.movie.setScaledSize(QSize(self.width() * 0.6, self.height() * 0.7))
+        self.proLabel = QLabel(self)
+        self.proLabel.move(self.width() * 0.4 // 2, 0)
+        self.proLabel.setMovie(self.movie)
+        self.movie.start()
+
 
     def pre_launch_check(self):
         self.launch_progress_bar('check')
@@ -271,7 +311,7 @@ class MyProgressbar(QWidget):
         if cls:
             cls.update_label.emit('Augmentation...')
         if 'aug' not in listdir(self.aug_dir):
-            mkdir(self.aug_dir + '/aug/')
+            mkdir(self.parent_widget.aug_dir + '/aug/')
         files = sorted(listdir(self.aug_dir))
         for i, fname in enumerate(files):  # Ищем изображения
             if 'img_' in fname and fname.endswith('.png'):
@@ -337,13 +377,10 @@ class MyProgressbar(QWidget):
     def merge(self, cls=None):
         if cls:
             cls.update_label.emit('Merging folders...')
-        print(self.parent_widget.merge_src_dirs.copy())
-        print(self.parent_widget.merge_dst_dir)
         self.i_progress = 0
         inpaths = self.parent_widget.merge_src_dirs.copy()
-        inpaths = list(map(lambda x: x + '/', inpaths))
-        print(inpaths)
-        outpath = self.parent_widget.merge_dst_dir + '/'
+        inpaths = list(map(lambda x: x + '\\', inpaths))
+        outpath = self.parent_widget.merge_dst_dir + '\\'
         ncopy = 0  # Might be changed to num of last el + 1
         old_percent = 0
         nb_files = sum([len(files) for inpath in inpaths for r, d, files in walk(inpath) if 'test' not in d])
@@ -351,11 +388,12 @@ class MyProgressbar(QWidget):
         # if outpath not in listdir():
         #     mkdir(outpath)
         for inpath in inpaths:
-            print(inpath)
             for dirname, subdirs, fnames in walk(inpath):
-                print(dirname, fnames)
                 if 'test' in dirname:
                     continue
+                if 'aug' in dirname and not self.include_aug:
+                    continue
+
                 for fname in fnames:
                     self.i_progress += 1
                     if fname.endswith('.png'):
@@ -376,28 +414,24 @@ class MyProgressbar(QWidget):
             cls.update_progressbar.emit(100)
             self.enable_buttons()
             cls.update_label.emit('Merging folders done')
-            print(outpath)
 
     def check(self, cls=None):
         if cls:
             cls.update_label.emit('Checking files...')
-        print(self.check_dir)
-        print(listdir(self.check_dir + '/aug/'))
-        if 'aug_test' not in listdir(self.check_dir + '/aug/'):
-            mkdir(self.check_dir + '/aug/aug_test/')
-        files = sorted(listdir(self.check_dir + "/aug/"))
-        print(files)
+        if 'aug_test' not in listdir(self.parent_widget.check_dir + '/aug/'):
+            mkdir(self.parent_widget.check_dir + '/aug/aug_test/')
+        files = sorted(listdir(self.parent_widget.check_dir + "/aug/"))
         for num, file in enumerate(files):
             if file.endswith(".png"):
-                img = cv2.imread(self.check_dir + "/aug/" + file)
+                img = cv2.imread(self.parent_widget.check_dir + "/aug/" + file)
                 txt = file.replace('.png', '.txt')
-                with open(self.check_dir + "/aug/" + txt, "r") as fread:
+                with open(self.parent_widget.check_dir + "/aug/" + txt, "r") as fread:
                     coords = fread.read()
                 for i, coord in enumerate(literal_eval(coords)):
                     img = cv2.circle(img, coord, radius=3, color=(0, 0, 255), thickness=-1)
                     img = cv2.putText(img, str(i + 1), (coord[0] + 5, coord[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                       (0, 0, 255), 1)
-                cv2.imwrite(self.check_dir + "/aug/aug_test/" + file.replace('.png', '_test.png'), img)
+                cv2.imwrite(self.parent_widget.check_dir + "/aug/aug_test/" + file.replace('.png', '_test.png'), img)
                 # print(self.check_dir + "/aug/aug_test/" + file.replace('.png', '_test.png'))
             percent = int(num / len(files) * 100)
 
@@ -432,7 +466,7 @@ class MyProgressbar(QWidget):
         if cls:
             cls.update_progressbar.emit(0)
 
-        path = self.parent_widget.merge_dst_dir + '/'
+        path = self.parent_widget.compare_dir + '/'
         imgs = sorted(filter(lambda x: x.endswith('.png'), listdir(path)),
                       key=lambda x: int(x.replace('img_', '').replace('.png', '')))
         print(imgs)
@@ -462,14 +496,33 @@ class MyProgressbar(QWidget):
                 current_file = check_file
 
         if self.rm_images:
-            # print(self.rm_images)
+            if 'removed' not in listdir(path):
+                mkdir(path + 'removed')
+                lnum = 0
+            else:
+                imgs = sorted(filter(lambda x: x.endswith('.png'), listdir(path)),
+                              key=lambda x: int(x.replace('img_', '').replace('.png', '')))
+                lnum = int(imgs[-1].replace('.png', '').replace('img_', ''))
+                print(lnum)
+
             duplicates = self.drop_duplicates()
+            info_txt = []
             for k, v in duplicates.items():
                 v = sorted(filter(lambda x: x.endswith('.png'), v),
                            key=lambda x: int(x.replace(path + 'img_', '').replace('.png', '')))
                 orig = v[0]
                 dropped = v[1:]
                 print(orig, dropped)
+
+                info_txt.append(orig + ' : ' + str(dropped))
+
+                for fp in dropped:
+                    shutil.move(fp, path + 'removed/' + 'rm_img_' + str(lnum + 1) + '.png')
+                    lnum += 1
+
+            # if 'log.txt' in listdir(path + 'removed'):
+            with open(path + 'removed/' + 'log.txt', 'a') as f:
+                f.write('\n'.join(info_txt) + '\n')
 
         end = time()
         self.progressbar.setValue(100)
@@ -502,7 +555,6 @@ if __name__ == '__main__':
     example.show()
     sys.exit(app.exec_())
 
-# Добавить настройки папок для check и др...
 # 4eb0ff
 # pyinstaller --onefile --noconsole --icon=aug_icon.ico aug.py
 # Повторяющиеся хэши ???
