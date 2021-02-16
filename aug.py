@@ -258,9 +258,9 @@ class MyProgressbar(QWidget):
 
 
         self.movie = QMovie("res/intro.gif")
-        self.movie.setScaledSize(QSize(self.width() * 0.6, self.height() * 0.7))
+        self.movie.setScaledSize(QSize(int(self.width() * 0.6), int(self.height() * 0.7)))
         self.proLabel = QLabel(self)
-        self.proLabel.move(self.width() * 0.4 // 2, 0)
+        self.proLabel.move((self.width() * 0.4 / 2), 0)
         self.proLabel.setMovie(self.movie)
         self.movie.start()
 
