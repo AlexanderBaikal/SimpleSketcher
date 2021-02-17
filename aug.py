@@ -9,12 +9,12 @@ from time import time
 
 import cv2
 import imagehash
-from PIL import Image
+from PIL import Image, ImageChops
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QMovie
 from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, \
-    QMainWindow, QAction, QProgressBar, QLabel, QFileDialog, QAbstractItemView
+    QMainWindow, QAction, QProgressBar, QLabel, QFileDialog, QAbstractItemView, QMessageBox
 
 from settings import Ui_Form
 
@@ -66,15 +66,6 @@ class MyMainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.mysettings:
             self.mysettings.close()
-
-    # def eventFilter(self, obj, ev):
-    #     if ev.type() == QEvent.MouseButtonPress:
-    #         mev = QMouseEvent(ev)
-    #         if mev.button() == Qt.LeftButton:
-    #             qDebug('LB')
-    #         if mev.button() == Qt.RightButton:
-    #             qDebug('RB')
-    #     return QMainWindow.eventFilter(obj, ev)
 
 
 class MySettings(QWidget, Ui_Form):
@@ -172,14 +163,18 @@ class MySettings(QWidget, Ui_Form):
         if self.merge_src_dirs and self.listView.selectedItems():
             rm = [item.text() for item in self.listView.selectedItems()]
             for el in rm:
-                self.merge_src_dirs.remove(abspath(el))
+                for el2 in self.merge_src_dirs:
+                    if el in el2:
+                        self.merge_src_dirs.remove(el2)
             self.update_lw()
 
     def update_lw(self, ap=-1):
         if ap == -1:
             ap = self.ap
         self.listView.clear()
-        shortname = lambda x: x[ap:] if x[ap:] else x
+        # if cpath in mainpath
+        # print(abspath(''), self.merge_dst_dir[:ap - 1])
+        shortname = lambda x: x[ap:] if x[ap:] and x[:ap - 1] == abspath('') else x
         self.listView.addItems(list(map(shortname, self.merge_src_dirs)))
         self.label_7.setText(shortname(self.merge_dst_dir))
         self.label_5.setText(shortname(self.check_dir))
@@ -212,6 +207,7 @@ class MySettings(QWidget, Ui_Form):
 class ProgressbarThread(QThread):
     update_progressbar = pyqtSignal(int)
     update_label = pyqtSignal(str)
+    call_error = pyqtSignal(str)
 
     def __init__(self, action_name, parent=None):
         super().__init__()
@@ -288,6 +284,7 @@ class MyProgressbar(QWidget):
         self.ProgressbarThread_intance = ProgressbarThread(action_name, self.parent_widget)
         self.ProgressbarThread_intance.update_progressbar.connect(self.updateProgressbar)
         self.ProgressbarThread_intance.update_label.connect(self.updateLabel)
+        self.ProgressbarThread_intance.call_error.connect(self.call_error)
         self.ProgressbarThread_intance.start()
 
     def updateProgressbar(self, value):
@@ -295,6 +292,11 @@ class MyProgressbar(QWidget):
 
     def updateLabel(self, string):
         self.lbl.setText(string)
+
+    def call_error(self, string):
+        mbox = QMessageBox(QMessageBox.Warning, "Error", "Filename is invalid: " + str(string).split(':')[-1])
+        mbox.setWindowIcon(QIcon('res/cancel_icon.png'))
+        mbox.exec_()
 
     def enable_buttons(self):
         self.parent_widget
@@ -475,16 +477,27 @@ class MyProgressbar(QWidget):
                 cls.update_progressbar.emit(percent)
         return hashes
 
+    def invalid_filename(self, cls, ve):
+        cls.call_error.emit(str(ve).split(':')[-1])
+        self.progressbar.setValue(100)
+        self.enable_buttons()
+        cls.update_label.emit('Error')
+        # print(ve)
+
+
+
     def compare(self, cls=None):
         start = time()
         self.i_progress = 0
         self.rm_images = []
-        if cls:
-            cls.update_progressbar.emit(0)
-
         path = self.parent_widget.compare_dir + '/'
-        imgs = sorted(filter(lambda x: x.endswith('.png'), listdir(path)),
-                      key=lambda x: int(x.replace('img_', '').replace('.png', '')))
+        try:
+            imgs = sorted(filter(lambda x: x.endswith('.png'), listdir(path)),
+                          key=lambda x: int(x.replace('img_', '').replace('.png', '')))
+        except ValueError as ve:
+            self.invalid_filename(cls, ve)
+
+            return
         print(imgs)
         nb_images = len(list(combinations(imgs, 2)))  # Should be replaced with formula
 
@@ -493,6 +506,8 @@ class MyProgressbar(QWidget):
         check_file = 0  # Проверяемый файл
         current_file = 0  # Текущий файл
         old_percent = 0  # percent
+        if cls:
+            cls.update_progressbar.emit(0)
 
         while check_file < len(hashes) and current_file < len(hashes):
             cls.update_label.emit('Comparison hashes...')
@@ -523,18 +538,23 @@ class MyProgressbar(QWidget):
 
             duplicates = self.drop_duplicates()
             info_txt = []
-            for k, v in duplicates.items():
-                v = sorted(filter(lambda x: x.endswith('.png'), v),
-                           key=lambda x: int(x.replace(path + 'img_', '').replace('.png', '')))
-                orig = v[0]
-                dropped = v[1:]
-                print(orig, dropped)
+            for d_key, d_val in duplicates.items():
+                d_val = sorted(filter(lambda x: x.endswith('.png'), d_val),
+                               key=lambda x: int(x.replace(path + 'img_', '').replace('.png', '')))
 
-                info_txt.append(orig + ' : ' + str(dropped))
+                val_exact = []
+                for i1, i2 in list(combinations(d_val, 2)):
+                    res = self.exact_difference(i1, i2)
+                    if res:
+                        val_exact.append(res)
+                ve_dict = self.get_exact_dict(val_exact)
+                print('vd', ve_dict)
 
-                for fp in dropped:
-                    shutil.move(fp, path + 'removed/' + 'rm_img_' + str(lnum + 1) + '.png')
-                    lnum += 1
+                for k1, v1 in ve_dict.items():
+                    info_txt.append(k1 + ' : ' + str(v1))
+                    for fp in v1:
+                        shutil.move(fp, path + 'removed/' + 'rm_img_' + str(lnum + 1) + '.png')
+                        lnum += 1
 
             # if 'log.txt' in listdir(path + 'removed'):
             with open(path + 'removed/' + 'log.txt', 'a') as f:
@@ -545,6 +565,26 @@ class MyProgressbar(QWidget):
         self.enable_buttons()
         cls.update_label.emit('Comparison done')
         print('Done', str(end - start))
+
+    def get_exact_dict(self, v_exact):
+        ve_dict = dict()
+        if v_exact:
+            for ve in v_exact:
+                if not any(ve[0] in val for val in ve_dict.values()):
+                    if ve[0] in ve_dict.keys() and ve[0]:
+                        if ve[1] not in ve_dict[ve[0]]:
+                            ve_dict[ve[0]].append(ve[1])
+                    else:
+                        ve_dict[ve[0]] = [ve[1]]
+        return ve_dict
+
+    def exact_difference(self, img1, img2):
+        image_1 = Image.open(img1)
+        image_2 = Image.open(img2)
+        result = ImageChops.difference(image_1, image_2).getbbox()
+        if result is None:
+            return img1, img2
+        return
 
     def drop_duplicates(self):
         hash_dict = dict()
@@ -573,6 +613,8 @@ if __name__ == '__main__':
 
 # 4eb0ff
 # pyinstaller --onefile --noconsole --icon=aug_app_icon.ico aug.py
-# Повторяющиеся хэши -> Попиксельное сравнение для одинаковых
+
 # Добавить ПКМ -> Выбор папки
-# Выход из текущей директории
+
+# Выход из текущей директории DONE
+# Повторяющиеся хэши -> Попиксельное сравнение для одинаковых DONE
